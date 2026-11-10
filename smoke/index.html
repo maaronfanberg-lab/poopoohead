@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#020b12"><title>Smoke Atelier · Living Flow</title>
+<style>
+:root{color-scheme:dark;--bg:#030914;--panel:#0b1523;--line:#253747;--fg:#e6efff;--muted:#93a8c3;--ice:#91cfff}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{overflow-x:hidden}.app{max-width:1100px;margin:auto;min-height:100svh;padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+.top{padding:calc(13px + env(safe-area-inset-top)) 16px 11px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+h1{font-size:16px;letter-spacing:.13em;font-weight:650;margin:0}h1 span{color:#a6d8f8}.tag{font-size:10px;color:#81a5bd;letter-spacing:.14em} .state{font-size:11px;letter-spacing:.07em;color:#8dd2e4}
+.stage{position:relative;height:clamp(350px,60svh,700px);background:radial-gradient(ellipse at 16% 0%,#112b43 0%,#040d19 48%,#02060c 100%);overflow:hidden;isolation:isolate}
+canvas{display:block;width:100%;height:100%;touch-action:none;cursor:crosshair}
+.stage::after{content:"";pointer-events:none;position:absolute;inset:0;border:1px solid rgba(109,146,170,.10)}
+.stage-note{position:absolute;left:15px;bottom:13px;font-size:11px;letter-spacing:.08em;color:#9cb6cc;opacity:.75;pointer-events:none}.source{position:absolute;right:14px;bottom:13px;font-size:10px;color:#7696ac;opacity:.8;pointer-events:none}
+.action-row{display:flex;gap:8px;padding:13px 13px 10px}button{background:#152638;color:#d8efff;border:1px solid #345069;border-radius:12px;min-height:42px;font-size:12px;font-weight:600;cursor:pointer;padding:9px 12px;touch-action:manipulation}button:active{transform:scale(.98)}.action-row button{flex:1}.action-row button:first-child{background:#1d435a;border-color:#477e9e}
+.controls{padding:3px 15px 11px}.section-title{font-size:12px;color:#d2e7fb;font-weight:600;display:flex;justify-content:space-between;align-items:center;margin:5px 0 13px}.section-title small{font-size:10px;color:#84a3bd;font-weight:400}
+.sliders{display:grid;grid-template-columns:repeat(3,1fr);gap:13px 23px}.sliders label{display:block;min-width:0;color:#a9c4df;font-size:11px}.sliders label span{display:flex;justify-content:space-between;gap:4px}.sliders output{color:#d9f6ff;font-variant-numeric:tabular-nums}.sliders input{width:100%;display:block;accent-color:#8ad9ff;height:20px;touch-action:pan-y;margin-top:7px}
+.colors{display:flex;gap:7px;margin-top:14px}.colors button{flex:1;min-height:33px;padding:7px 2px;font-size:11px;background:#101d2b;border-color:#263d52}.colors button[aria-pressed="true"]{border-color:#89c7ee;background:#244154;color:white}
+.note{font-size:10px;line-height:1.5;color:#7894ab;padding:10px 15px 14px;text-align:center}
+@media(max-width:600px){.sliders{grid-template-columns:1fr 1fr;column-gap:19px;row-gap:10px}.top{padding-left:13px;padding-right:13px}.stage{height:clamp(350px,57svh,620px)}.source{display:none}}
+@media(max-height:740px){.stage{height:clamp(290px,50svh,560px)}}
+</style>
+</head>
+<body><main class="app">
+<header class="top"><div><h1>SMOKE <span>ATELIER</span></h1><div class="tag">LIVING FLUID RIBBONS</div></div><div class="state" id="status">● FLOWING</div></header>
+<div class="stage" id="stage"><canvas id="canvas" aria-label="Interactive translucent smoke flow simulation"></canvas><div class="stage-note">Touch and drag to sculpt the smoke</div><div class="source">COMPUTED LIVE · NOT A STILL IMAGE</div></div>
+<nav class="action-row"><button id="pause" type="button">Ⅱ Pause</button><button id="new" type="button">✧ New flow</button><button id="reset" type="button">↺ Reset</button></nav>
+<section class="controls"><div class="section-title"><span>Fluid controls</span><small>Every slider changes the flow</small></div><div class="sliders">
+<label><span>Vorticity <output id="curlValue">70%</output></span><input id="curl" type="range" min="0" max="100" value="70"></label>
+<label><span>Silk / width <output id="silkValue">52%</output></span><input id="silk" type="range" min="0" max="100" value="52"></label>
+<label><span>Wind <output id="windValue">46%</output></span><input id="wind" type="range" min="0" max="100" value="46"></label>
+<label><span>Fine detail <output id="detailValue">75%</output></span><input id="detail" type="range" min="0" max="100" value="75"></label>
+<label><span>Turbulence <output id="turbValue">36%</output></span><input id="turb" type="range" min="0" max="100" value="36"></label>
+<label><span>Luminosity <output id="glowValue">74%</output></span><input id="glow" type="range" min="0" max="100" value="74"></label>
+</div><div class="colors"><button data-color="ice" aria-pressed="true">Ice blue</button><button data-color="pearl" aria-pressed="false">Pearl white</button><button data-color="rose" aria-pressed="false">Pale rose</button></div></section>
+<div class="note">Procedural vortex-deformed smoke sheets · No external libraries · Designed for touch</div>
+</main>
+<script>
+(()=>{'use strict';
+const $=s=>document.getElementById(s),canvas=$('canvas'),ctx=canvas.getContext('2d',{alpha:false}),stage=$('stage');if(!ctx){$('status').textContent='Canvas unavailable';return;}
+const TAU=Math.PI*2,clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const defaults={curl:70,silk:52,wind:46,detail:75,turb:36,glow:74};const p={...defaults};
+let W=900,H=440,D=1,time=6.65,playing=true,color='ice',seed=10,last=0,lastDraw=0,drag=null,eddies=[];
+function resize(){let r=stage.getBoundingClientRect();W=Math.max(270,r.width);H=Math.max(270,r.height);D=Math.min(window.devicePixelRatio||1,1.5);canvas.width=Math.round(W*D);canvas.height=Math.round(H*D);draw()}
+function background(){ctx.setTransform(D,0,0,D,0,0);let g=ctx.createRadialGradient(W*.20,-H*.14,0,W*.42,H*.4,Math.max(W,H)*1.35);g.addColorStop(0,'#092137');g.addColorStop(.35,'#06121f');g.addColorStop(.85,'#01060d');g.addColorStop(1,'#010409');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);let fade=ctx.createLinearGradient(0,0,0,H);fade.addColorStop(0,'rgba(0,0,0,0)');fade.addColorStop(1,'rgba(0,0,0,.27)');ctx.fillStyle=fade;ctx.fillRect(0,0,W,H)}
+
+function smooth(a,b,x){let v=clamp((x-a)/(b-a),0,1);return v*v*(3-2*v)}
+function paperPoint(u,v,layer){
+ let open=smooth(.14,.88,u),timeShift=time*(.04+.16*p.wind/100);
+ let x=-.10+u*1.15*(.75+.50*p.wind/100);
+ let y=.53 + .02*layer*open*Math.sin(u*5+layer*1.8) + v*(.025+.24*open)*(.4+1.15*p.silk/100)*(1+.12*Math.sin(9.0*u+layer+timeShift)) + .025*open*Math.sin(9*u+.3*timeShift+layer*.75);
+ x+=(.003+.022*p.turb/100)*Math.sin(17*u+2*v+timeShift*2)*(open); y+=open*(.006+.025*p.turb/100)*Math.cos(18*u+4*v-timeShift);
+ const mult=(.15+1.10*p.curl/100);
+ const centers=[[.39,.51,7.3,.20],[.61,.40,-6.8,.25],[.81,.62,6.9,.24]];
+ for(let i=0;i<centers.length;i++){
+  let a=centers[i],cx=a[0]+.018*Math.sin(timeShift*.35+i*2+layer*.5+seed*.19),cy=a[1]+.038*Math.cos(timeShift*.55+i*2+seed*.23+layer*.21),dx=x-cx,dy=y-cy;
+  let radius=(dx*dx+dy*dy)/(a[3]*a[3]);
+  let theta=mult*a[2]*(1+.055*Math.sin(layer*2.0+seed*.14))/((1+radius)*(1+radius));
+  let ct=Math.cos(theta),st=Math.sin(theta);
+  x=cx+dx*ct-dy*st; y=cy+dx*st+dy*ct;
+ }
+ for(let e of eddies){let dx=x-e.x,dy=y-e.y,r2=dx*dx+dy*dy,theta=e.spin*36*Math.exp(-r2/.02);let ct=Math.cos(theta),st=Math.sin(theta);x=e.x+dx*ct-dy*st;y=e.y+dx*st+dy*ct;}return [x*W,y*H];
+}
+function drawSurface(){
+ const lum=p.glow/100,detail=p.detail/100;
+ const rgb=color==='ice'?[180,223,255]:color==='rose'?[255,202,230]:[229,237,255];
+ ctx.save();ctx.globalCompositeOperation='screen';
+ let layers=2, cross=detail>.7?38:28,steps=detail>.6?195:140;
+ for(let layer=0;layer<layers;layer++){
+  let coords=[];
+  for(let j=0;j<=cross;j++){
+   let v=(j/cross*2-1)*(.73+layer*.18);
+   let row=[];
+   for(let i=0;i<=steps;i++){
+    let u=i/steps;
+    let point=paperPoint(u,v,layer);
+    if(layer){point[0]+=W*(.017*layer)*Math.sin(4*u+time*.21+layer);point[1]+=H*(.031*layer)*Math.sin(u*5+layer*1.4)}
+    row.push(point);
+   }
+   coords.push(row);
+  }
+  // A soft body beneath every sharp filament produces the translucent photographic look.
+  ctx.save();ctx.filter='blur(10px)';ctx.beginPath();for(let i=0;i<=steps;i++){
+    let a=coords[Math.floor(cross*.5)][i];i===0?ctx.moveTo(a[0],a[1]):ctx.lineTo(a[0],a[1]);
+  }
+  ctx.lineWidth=H*(.065+.065*p.silk/100);ctx.lineCap='round';ctx.strokeStyle=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},${lum*.055})`;ctx.stroke();ctx.restore();
+  // Simulate volumetric translucent membranes with folded sheeting.
+  for(let j=0;j<cross;j++){
+   let v=(j+.5)/cross*2-1,edge=Math.abs(v),opacity=(.11+.07*edge)*lum/(layers===2?1.15:1);
+   ctx.fillStyle=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},${opacity})`;
+   let a=coords[j],b=coords[j+1];
+   ctx.beginPath();for(let i=0;i<=steps;i++){let p=a[i];if(i===0)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);}
+   for(let i=steps;i>=0;i--){let p=b[i];ctx.lineTo(p[0],p[1]);}
+   ctx.closePath();ctx.fill();
+  }
+  for(let j=0;j<=cross;j++){
+   let edge=Math.abs(j/cross*2-1),main=(j===0||j===cross),bright=lum*(main?.20:(.018+.027*edge));
+   ctx.beginPath();for(let i=0;i<=steps;i++){let p=coords[j][i];i===0?ctx.moveTo(p[0],p[1]):ctx.lineTo(p[0],p[1]);}
+   ctx.strokeStyle=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},${bright})`;
+   ctx.lineWidth=main?1.15:.55;ctx.stroke();
+   if(main||j===Math.floor(cross*.5)){
+    ctx.shadowColor=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},.8)`;ctx.shadowBlur=11;
+    ctx.strokeStyle=`rgba(${rgb[0]},${rgb[1]},${rgb[2]},${lum*.075})`;ctx.lineWidth=1.9;ctx.stroke();ctx.shadowBlur=0;
+   }
+  }
+ }
+ ctx.restore();
+}
+
+function draw(){if(!W||!H)return;let startDraw=performance.now();background();drawSurface();window.__lastRenderMs=performance.now()-startDraw;}
+function run(now){let delta=clamp((now-(last||now))/1000,0,.06);last=now;if(playing){time+=delta;for(let i=eddies.length-1;i>=0;i--){let e=eddies[i];e.life-=delta;if(e.life<=0)eddies.splice(i,1);else e.spin*=.996;}if(now-lastDraw>32){draw();lastDraw=now;}}requestAnimationFrame(run)}
+function sync(){for(let k in p){$(k).value=p[k];$(k+'Value').textContent=p[k]+'%'}}
+for(let k in p){$(k).addEventListener('input',()=>{p[k]=Number($(k).value);$(k+'Value').textContent=p[k]+'%';if(!playing)draw();});}
+$('pause').onclick=()=>{playing=!playing;$('pause').textContent=playing?'Ⅱ Pause':'▶ Play';$('status').textContent=playing?'● FLOWING':'● PAUSED';draw()};
+$('new').onclick=()=>{seed+=1+Math.floor(Math.random()*17);time=6.65+seed*.29;eddies=[];draw()};
+$('reset').onclick=()=>{seed=10;time=6.65;color='ice';Object.assign(p,defaults);sync();document.querySelectorAll('[data-color]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.color===color)));eddies=[];playing=true;$('pause').textContent='Ⅱ Pause';$('status').textContent='● FLOWING';draw()};
+for(let b of document.querySelectorAll('[data-color]'))b.onclick=()=>{color=b.dataset.color;document.querySelectorAll('[data-color]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));draw()};
+const coords=e=>{let r=canvas.getBoundingClientRect();return {x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height}};
+canvas.addEventListener('pointerdown',e=>{e.preventDefault();try{canvas.setPointerCapture(e.pointerId)}catch(_){}let q=coords(e);drag={id:e.pointerId,x:q.x,y:q.y};eddies.push({x:q.x,y:q.y,spin:.052*(e.shiftKey?-1:1),life:1.8});if(eddies.length>6)eddies.shift();draw()});
+canvas.addEventListener('pointermove',e=>{if(!drag||drag.id!==e.pointerId)return;e.preventDefault();let q=coords(e),dx=q.x-drag.x,dy=q.y-drag.y;let lastE=eddies[eddies.length-1];if(lastE){lastE.x=q.x;lastE.y=q.y;lastE.spin=clamp((dx-dy)*.1,-.11,.11)||.04;lastE.life=1.8;}drag={id:e.pointerId,x:q.x,y:q.y};draw()});
+canvas.addEventListener('pointerup',()=>drag=null);canvas.addEventListener('pointercancel',()=>drag=null);
+resize();draw();requestAnimationFrame(run);if(window.ResizeObserver)new ResizeObserver(resize).observe(stage);else window.addEventListener('resize',resize);
+})();
+</script></body></html>
